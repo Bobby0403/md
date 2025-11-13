@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { Toaster } from '@/components/ui/sonner'
+import { useIframeCommunication } from '@/composables/useIframeCommunication'
 import { useUIStore } from '@/stores/ui'
 import CodemirrorEditor from '@/views/CodemirrorEditor.vue'
 
@@ -9,12 +10,25 @@ const { isDark } = storeToRefs(uiStore)
 
 const isUtools = ref(false)
 
+// iframe 通信
+const iframeCommunication = useIframeCommunication()
+
 onMounted(() => {
   // 检测是否为 Utools 环境
   isUtools.value = !!(window as any).__MD_UTOOLS__
   if (isUtools.value) {
     document.documentElement.classList.add(`is-utools`)
   }
+
+  // 初始化 iframe 通信（仅在 iframe 环境中）
+  if (window.parent && window.parent !== window) {
+    iframeCommunication.init()
+  }
+})
+
+onUnmounted(() => {
+  // 清理 iframe 通信
+  iframeCommunication.cleanup()
 })
 </script>
 

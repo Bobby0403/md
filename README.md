@@ -101,6 +101,12 @@ nvm i && nvm use
 # 安装依赖
 pnpm i
 
+# 配置环境变量（可选，用于 iframe 安全域名白名单）
+# 复制示例文件并根据需要修改
+cp .env.example .env
+# 或
+cp .env.development.example .env.development
+
 # 启动开发模式
 pnpm web dev
 # 访问 http://localhost:5173/md/
