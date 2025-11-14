@@ -92,6 +92,14 @@
 
 </div>
 
+## 远程仓库说明
+
+| 远程仓库   | 用途             | 地址示例                                                   |
+| ---------- | ---------------- | ---------------------------------------------------------- |
+| `origin`   | 你的 GitHub Fork | `git@github.com:Bobby0403/md.git`                          |
+| `upstream` | 原作者的仓库     | `https://github.com/doocs/md.git`                          |
+| `aliyun`   | 你的阿里云仓库   | `git@codeup.aliyun.com:5edefdefd1d1abe63b55f82e/ai/md.git` |
+
 ## 🛠️ 开发与部署
 
 ```sh
