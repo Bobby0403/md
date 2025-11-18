@@ -14,6 +14,7 @@ export enum IframeMessageType {
   REPLACE_SELECTION = 'REPLACE_SELECTION', // 替换选中的文本
   FORMAT_CONTENT = 'FORMAT_CONTENT', // 格式化内容
   SET_THEME = 'SET_THEME', // 设置主题（light/dark）
+  SET_IMAGE_UPLOAD_CONFIG = 'SET_IMAGE_UPLOAD_CONFIG', // 设置图片上传配置
   GET_RENDERED_HTML = 'GET_RENDERED_HTML', // 获取渲染后的 HTML
   READY = 'READY', // iframe 准备就绪
 
@@ -82,6 +83,17 @@ export interface SetThemeMessage extends BaseIframeMessage {
 }
 
 /**
+ * 设置图片上传配置消息
+ */
+export interface SetImageUploadConfigMessage extends BaseIframeMessage {
+  type: IframeMessageType.SET_IMAGE_UPLOAD_CONFIG
+  payload: {
+    imgHost: string // 图床类型，如 'aliOSS', 'txCOS', 'qiniu' 等
+    config: Record<string, any> // 图床配置参数
+  }
+}
+
+/**
  * 内容响应消息
  */
 export interface ContentResponseMessage extends BaseIframeMessage {
@@ -138,6 +150,7 @@ export type IframeMessage
     | InsertTextMessage
     | ReplaceSelectionMessage
     | SetThemeMessage
+    | SetImageUploadConfigMessage
     | ContentResponseMessage
     | ContentChangedMessage
     | RenderedHtmlResponseMessage

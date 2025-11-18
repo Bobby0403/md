@@ -5,6 +5,7 @@ import { usePostStore } from '@/stores/post'
 import { useRenderStore } from '@/stores/render'
 import { useUIStore } from '@/stores/ui'
 import { IframeMessageType } from '@/types/iframe-message'
+import { store } from '@/utils'
 import {
   isInIframe,
   safePostMessageToParent,
@@ -154,6 +155,40 @@ export function useIframeCommunication() {
             if ((theme === 'dark' && !uiStore.isDark) || (theme === 'light' && uiStore.isDark)) {
               uiStore.toggleDark()
             }
+          }
+          break
+        }
+
+        case IframeMessageType.SET_IMAGE_UPLOAD_CONFIG: {
+          const { imgHost, config } = (message as any).payload || {}
+          if (imgHost && config && typeof config === 'object') {
+            try {
+              // 设置图床类型
+              await store.set('imgHost', imgHost)
+              // 设置图床配置
+              await store.setJSON(`${imgHost}Config`, config)
+              console.log(`[IframeCommunication] 图片上传配置已设置: ${imgHost}`)
+            }
+            catch (error: any) {
+              await sendToParent({
+                type: IframeMessageType.ERROR,
+                id: message.id,
+                payload: {
+                  error: 'CONFIG_ERROR',
+                  message: error.message || '设置图片上传配置失败',
+                },
+              })
+            }
+          }
+          else {
+            await sendToParent({
+              type: IframeMessageType.ERROR,
+              id: message.id,
+              payload: {
+                error: 'INVALID_CONFIG',
+                message: '图片上传配置参数无效，需要提供 imgHost 和 config',
+              },
+            })
           }
           break
         }
