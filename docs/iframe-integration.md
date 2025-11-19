@@ -792,45 +792,42 @@ const message: IframeMessage = {
 
 ### 配置方法
 
-#### 方法 1：环境变量配置（推荐，构建时配置）
+**仅支持构建时配置（环境变量）**
 
-在构建时通过环境变量配置允许的域名：
+为了安全考虑，域名白名单只能在构建时通过环境变量配置，不支持运行时配置。
+
+Vite 会自动读取 `.env` 文件，你只需要创建文件并配置即可，无需在构建命令中指定。
+
+#### 方式 1：使用 .env 文件（推荐）
+
+在 `apps/web/` 目录下创建 `.env` 文件（或 `.env.production` 用于生产环境）：
 
 ```bash
-# .env 文件
+# apps/web/.env 或 apps/web/.env.production
 VITE_IFRAME_ALLOWED_ORIGINS='["https://example.com","https://*.example.com"]'
+```
 
-# 或在构建命令中
+**文件位置说明：**
+
+- Vite 会自动从 `apps/web/` 目录（vite.config.ts 所在目录）查找 `.env` 文件
+- 支持的文件名：
+  - `.env` - 所有环境
+  - `.env.production` - 仅生产环境（`vite build` 时）
+  - `.env.development` - 仅开发环境（`vite dev` 时）
+  - `.env.local` - 所有环境（会被 git 忽略，适合本地配置）
+
+**重要提示：**
+
+- 环境变量必须以 `VITE_` 开头才能被 Vite 暴露给客户端代码
+- 值必须是有效的 JSON 数组字符串
+- 文件创建后，直接运行 `pnpm web build` 即可，Vite 会自动读取
+
+#### 方式 2：在构建命令中设置（临时使用）
+
+如果不想创建 .env 文件，也可以在构建命令中临时指定：
+
+```bash
 VITE_IFRAME_ALLOWED_ORIGINS='["https://example.com"]' pnpm web build
-```
-
-#### 方法 2：运行时配置（浏览器控制台）
-
-在浏览器控制台中配置允许的域名：
-
-```javascript
-// 设置允许的域名列表
-localStorage.setItem('__md_iframe_allowed_origins', JSON.stringify([
-  'https://example.com',
-  'https://*.example.com', // 支持通配符
-  'http://localhost:3000' // 开发环境
-]))
-
-// 刷新页面使配置生效
-location.reload()
-```
-
-#### 方法 3：通过代码配置
-
-```javascript
-import { setAllowedOrigins } from '@md/web/src/utils/iframeSecurity'
-
-// 设置允许的域名
-setAllowedOrigins([
-  'https://example.com',
-  'https://*.example.com',
-  'http://localhost:3000'
-])
 ```
 
 ### 域名格式说明
@@ -858,6 +855,61 @@ setAllowedOrigins([
 4. **生产环境配置**：生产环境必须配置白名单，否则编辑器将拒绝所有 iframe 通信。
 
 5. **HTTPS 要求**：生产环境建议只允许 HTTPS 域名。
+
+6. **安全闭包**：域名白名单只能在构建时通过环境变量配置，不支持运行时配置（localStorage），确保只有构建时指定的域名才能使用编辑器。
+
+### 故障排查
+
+#### 问题：配置了环境变量但仍然提示 UNAUTHORIZED_ORIGIN
+
+**可能原因和解决方案：**
+
+1. **创建 .env 文件**
+   - ✅ 正确：在 `apps/web/` 目录下创建 `.env` 文件（或 `.env.production`）
+   - Vite 会自动读取，无需在构建命令中指定
+
+   ```bash
+   # 在 apps/web/.env 文件中添加：
+   VITE_IFRAME_ALLOWED_ORIGINS='["http://localhost:3001","https://your-domain.com"]'
+
+   # 然后直接运行构建命令即可
+   pnpm web build
+   ```
+
+   **文件位置：**
+   - ✅ `apps/web/.env` - 正确位置
+   - ✅ `apps/web/.env.production` - 生产环境专用
+   - ❌ 项目根目录 `.env` - 不会被读取（除非 vite.config.ts 在根目录）
+
+2. **配置格式错误**
+   - ❌ 错误：`VITE_IFRAME_ALLOWED_ORIGINS=http://localhost:3001`
+   - ✅ 正确：`VITE_IFRAME_ALLOWED_ORIGINS='["http://localhost:3001"]'`
+   - 必须是有效的 JSON 数组字符串
+
+3. **已部署的版本需要重新构建**
+   - 如果已经部署，修改环境变量后必须重新构建和部署才能生效
+   - 环境变量是在构建时注入到代码中的，运行时修改不会生效
+   - ⚠️ **注意**：为了安全考虑，不支持运行时配置（localStorage），只能通过构建时环境变量配置
+
+4. **检查控制台日志**
+   - 打开浏览器开发者工具，查看控制台日志
+   - 查找 `[IframeSecurity]` 开头的日志，确认：
+     - 是否读取到了环境变量
+     - 允许的域名列表是什么
+     - 验证的 origin 是什么
+
+   示例日志：
+
+   ```
+   [IframeSecurity] Using environment variable origins: ["http://localhost:3001"]
+   [IframeSecurity] Checking origin: http://localhost:3001 against allowed origins: ["http://localhost:3001"]
+   ```
+
+5. **确认 origin 格式**
+   - 确保配置的域名格式正确，包含协议和端口（如果有）
+   - `http://localhost:3001` ✅
+   - `localhost:3001` ❌（缺少协议）
+   - `http://localhost` ❌（缺少端口，如果实际使用 3001 端口）
 
 ## 常见问题
 
@@ -953,6 +1005,40 @@ editorFrame.contentWindow.postMessage({
 ### Q: 主题切换后如何持久化？
 
 A: 编辑器会自动将主题设置保存到 localStorage 中，下次加载时会自动恢复。你无需手动处理持久化。
+
+### Q: 配置了环境变量但仍然提示 UNAUTHORIZED_ORIGIN？
+
+A: 请按以下步骤排查：
+
+1. **确认环境变量格式**：必须是有效的 JSON 数组字符串
+
+   ```bash
+   # ✅ 正确
+   VITE_IFRAME_ALLOWED_ORIGINS='["http://localhost:3001"]'
+
+   # ❌ 错误
+   VITE_IFRAME_ALLOWED_ORIGINS=http://localhost:3001
+   ```
+
+2. **确认 .env 文件位置和格式**
+   - 文件必须在 `apps/web/` 目录下
+   - 环境变量必须以 `VITE_` 开头
+   - 值必须是有效的 JSON 数组字符串
+
+   ```bash
+   # 检查文件是否存在
+   ls apps/web/.env
+
+   # 文件内容示例
+   VITE_IFRAME_ALLOWED_ORIGINS='["http://localhost:3001"]'
+   ```
+
+3. **必须重新构建**：如果已经部署，修改环境变量后必须重新构建和部署才能生效
+   - ⚠️ **注意**：为了安全考虑，不支持运行时配置，只能通过构建时环境变量配置
+
+4. **检查控制台日志**：查看 `[IframeSecurity]` 开头的日志，确认配置是否被正确读取
+
+5. **确认域名格式**：必须包含协议和端口（如果有），例如：`http://localhost:3001`
 
 ### Q: 图片上传配置后不生效怎么办？
 

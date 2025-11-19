@@ -5,10 +5,10 @@
 
 /**
  * 获取允许的域名列表
- * 优先级：环境变量 > localStorage 配置 > 默认值
+ * 仅从环境变量读取（构建时配置），不支持的运行时配置以确保安全
  */
 export async function getAllowedOrigins(): Promise<string[]> {
-  // 1. 从环境变量读取（构建时配置）
+  // 从环境变量读取（构建时配置）
   const envOrigins = import.meta.env.VITE_IFRAME_ALLOWED_ORIGINS
   if (envOrigins) {
     try {
@@ -26,22 +26,7 @@ export async function getAllowedOrigins(): Promise<string[]> {
     console.log('[IframeSecurity] No VITE_IFRAME_ALLOWED_ORIGINS found in environment variables')
   }
 
-  // 2. 从 localStorage 读取（运行时配置）
-  try {
-    const stored = localStorage.getItem('__md_iframe_allowed_origins')
-    if (stored) {
-      const origins = JSON.parse(stored)
-      if (Array.isArray(origins) && origins.length > 0) {
-        console.log('[IframeSecurity] Using localStorage origins:', origins)
-        return origins
-      }
-    }
-  }
-  catch (error) {
-    console.warn('[IframeSecurity] Failed to parse stored origins:', error)
-  }
-
-  // 3. 默认值：开发环境允许所有，生产环境为空数组（需要显式配置）
+  // 默认值：开发环境允许所有，生产环境为空数组（需要显式配置）
   if (import.meta.env.DEV) {
     console.log('[IframeSecurity] Using default DEV origins: ["*"] (allow all)')
     return ['*'] // 开发环境允许所有域名
@@ -52,15 +37,13 @@ export async function getAllowedOrigins(): Promise<string[]> {
 }
 
 /**
- * 设置允许的域名列表（运行时配置）
+ * 设置允许的域名列表（已废弃，不再支持运行时配置）
+ * 为了安全考虑，域名白名单只能在构建时通过环境变量配置
+ * @deprecated 此函数已废弃，不会产生任何效果。请使用环境变量 VITE_IFRAME_ALLOWED_ORIGINS 在构建时配置
  */
-export function setAllowedOrigins(origins: string[]): void {
-  try {
-    localStorage.setItem('__md_iframe_allowed_origins', JSON.stringify(origins))
-  }
-  catch (error) {
-    console.error('[IframeSecurity] Failed to save allowed origins:', error)
-  }
+export function setAllowedOrigins(_origins: string[]): void {
+  console.warn('[IframeSecurity] setAllowedOrigins is deprecated. Domain whitelist can only be configured via VITE_IFRAME_ALLOWED_ORIGINS environment variable at build time.')
+  // 不再支持运行时配置，直接返回
 }
 
 /**
