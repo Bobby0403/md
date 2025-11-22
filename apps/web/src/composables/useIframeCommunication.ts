@@ -1,11 +1,13 @@
 import type { IframeMessage } from '@/types/iframe-message'
 import { nextTick, watch } from 'vue'
 import { useEditorStore } from '@/stores/editor'
+import { useExportStore } from '@/stores/export'
 import { usePostStore } from '@/stores/post'
 import { useRenderStore } from '@/stores/render'
+import { useThemeStore } from '@/stores/theme'
 import { useUIStore } from '@/stores/ui'
 import { IframeMessageType } from '@/types/iframe-message'
-import { store } from '@/utils'
+import { generatePureHTML, processClipboardContent, store } from '@/utils'
 import {
   isInIframe,
   safePostMessageToParent,
@@ -21,6 +23,8 @@ export function useIframeCommunication() {
   const renderStore = useRenderStore()
   const uiStore = useUIStore()
   const postStore = usePostStore()
+  const exportStore = useExportStore()
+  const themeStore = useThemeStore()
 
   // 生成唯一消息 ID
   function generateMessageId(): string {
@@ -46,20 +50,26 @@ export function useIframeCommunication() {
 
   // 处理来自父窗口的消息
   async function handleMessage(event: MessageEvent<IframeMessage>) {
-    // 安全检查：验证消息来源
-    const isAllowed = await validateMessageOrigin(event)
-    if (!isAllowed) {
-      console.warn('[IframeCommunication] Blocked message from unauthorized origin:', event.origin)
-      // 发送错误消息告知父窗口
-      const originDisplay = event.origin || 'null'
-      await sendToParent({
-        type: IframeMessageType.ERROR,
-        payload: {
-          error: 'UNAUTHORIZED_ORIGIN',
-          message: `未授权的来源：${originDisplay} 不在允许的域名白名单中`,
-        },
-      })
-      return
+    // 安全检查：验证消息来源（开发环境跳过验证）
+    if (import.meta.env.PROD) {
+      const isAllowed = await validateMessageOrigin(event)
+      if (!isAllowed) {
+        console.warn('[IframeCommunication] Blocked message from unauthorized origin:', event.origin)
+        // 发送错误消息告知父窗口
+        const originDisplay = event.origin || 'null'
+        await sendToParent({
+          type: IframeMessageType.ERROR,
+          payload: {
+            error: 'UNAUTHORIZED_ORIGIN',
+            message: `未授权的来源：${originDisplay} 不在允许的域名白名单中`,
+          },
+        })
+        return
+      }
+    }
+    else {
+      // 开发环境：跳过验证，允许所有来源
+      console.log('[IframeCommunication] DEV mode: skipping origin validation for:', event.origin)
     }
 
     const message = event.data
@@ -193,13 +203,116 @@ export function useIframeCommunication() {
           break
         }
 
-        case IframeMessageType.GET_RENDERED_HTML: {
-          const html = renderStore.output
-          await sendToParent({
-            type: IframeMessageType.RENDERED_HTML_RESPONSE,
-            id: message.id,
-            payload: { html },
-          })
+        case IframeMessageType.COPY_CONTENT: {
+          const { format = 'txt' } = (message as any).payload || {}
+
+          try {
+            // MD 格式：直接返回 Markdown 源码
+            if (format === 'md') {
+              const mdContent = editorStore.getContent()
+              await sendToParent({
+                type: IframeMessageType.COPY_CONTENT_RESPONSE,
+                id: message.id,
+                payload: {
+                  success: true,
+                  content: mdContent,
+                  format: 'md',
+                },
+              })
+              break
+            }
+
+            // 其他格式需要处理 HTML
+            // 先刷新渲染
+            const raw = editorStore.getContent()
+            renderStore.render(raw, {
+              isCiteStatus: themeStore.isCiteStatus,
+              legend: themeStore.legend,
+              isUseIndent: themeStore.isUseIndent,
+              isUseJustify: themeStore.isUseJustify,
+              isCountStatus: themeStore.isCountStatus,
+              isMacCodeBlock: themeStore.isMacCodeBlock,
+              isShowLineNumber: themeStore.isShowLineNumber,
+            })
+
+            // 等待渲染完成
+            await nextTick()
+            await new Promise(resolve => setTimeout(resolve, 350))
+
+            const clipboardDiv = document.getElementById('output')
+            if (!clipboardDiv) {
+              await sendToParent({
+                type: IframeMessageType.COPY_CONTENT_RESPONSE,
+                id: message.id,
+                payload: {
+                  success: false,
+                  message: '未找到输出区域',
+                },
+              })
+              break
+            }
+
+            // 处理剪贴板内容
+            await processClipboardContent(themeStore.primaryColor)
+
+            const temp = clipboardDiv.innerHTML
+
+            let content = ''
+
+            // txt 格式：公众号格式（HTML）
+            if (format === 'txt') {
+              content = temp
+            }
+            // html 格式：HTML 源码
+            else if (format === 'html') {
+              content = temp
+            }
+            // html-without-style 格式：无样式 HTML
+            else if (format === 'html-without-style') {
+              content = await generatePureHTML(raw)
+            }
+            // html-and-style 格式：兼容样式 HTML
+            else if (format === 'html-and-style') {
+              content = exportStore.editorContent2HTML()
+            }
+            else {
+              await sendToParent({
+                type: IframeMessageType.COPY_CONTENT_RESPONSE,
+                id: message.id,
+                payload: {
+                  success: false,
+                  message: `不支持的格式: ${format}`,
+                },
+              })
+              // 恢复输出区域
+              clipboardDiv.innerHTML = renderStore.output
+              break
+            }
+
+            // 恢复输出区域
+            clipboardDiv.innerHTML = renderStore.output
+
+            // 返回内容
+            await sendToParent({
+              type: IframeMessageType.COPY_CONTENT_RESPONSE,
+              id: message.id,
+              payload: {
+                success: true,
+                content,
+                format,
+              },
+            })
+          }
+          catch (error: any) {
+            await sendToParent({
+              type: IframeMessageType.COPY_CONTENT_RESPONSE,
+              id: message.id,
+              payload: {
+                success: false,
+                message: error.message || '获取内容失败',
+              },
+            })
+          }
           break
         }
 

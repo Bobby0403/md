@@ -15,13 +15,13 @@ export enum IframeMessageType {
   FORMAT_CONTENT = 'FORMAT_CONTENT', // 格式化内容
   SET_THEME = 'SET_THEME', // 设置主题（light/dark）
   SET_IMAGE_UPLOAD_CONFIG = 'SET_IMAGE_UPLOAD_CONFIG', // 设置图片上传配置
-  GET_RENDERED_HTML = 'GET_RENDERED_HTML', // 获取渲染后的 HTML
+  COPY_CONTENT = 'COPY_CONTENT', // 复制内容到剪贴板（支持多种格式）
   READY = 'READY', // iframe 准备就绪
 
   // 从 iframe 到父窗口的消息
   CONTENT_CHANGED = 'CONTENT_CHANGED', // 内容已更改
   CONTENT_RESPONSE = 'CONTENT_RESPONSE', // 内容响应
-  RENDERED_HTML_RESPONSE = 'RENDERED_HTML_RESPONSE', // 渲染后的 HTML 响应
+  COPY_CONTENT_RESPONSE = 'COPY_CONTENT_RESPONSE', // 复制内容响应
   ERROR = 'ERROR', // 错误消息
   READY_RESPONSE = 'READY_RESPONSE', // 准备就绪响应
 }
@@ -94,6 +94,16 @@ export interface SetImageUploadConfigMessage extends BaseIframeMessage {
 }
 
 /**
+ * 复制内容消息
+ */
+export interface CopyContentMessage extends BaseIframeMessage {
+  type: IframeMessageType.COPY_CONTENT
+  payload: {
+    format?: 'txt' | 'html' | 'html-without-style' | 'html-and-style' | 'md' // 复制格式，默认为 'txt'
+  }
+}
+
+/**
  * 内容响应消息
  */
 export interface ContentResponseMessage extends BaseIframeMessage {
@@ -114,12 +124,15 @@ export interface ContentChangedMessage extends BaseIframeMessage {
 }
 
 /**
- * 渲染 HTML 响应消息
+ * 复制内容响应消息
  */
-export interface RenderedHtmlResponseMessage extends BaseIframeMessage {
-  type: IframeMessageType.RENDERED_HTML_RESPONSE
+export interface CopyContentResponseMessage extends BaseIframeMessage {
+  type: IframeMessageType.COPY_CONTENT_RESPONSE
   payload: {
-    html: string
+    success: boolean
+    content?: string // 返回的内容（根据 format 不同而不同）
+    format?: string // 内容格式
+    message?: string // 错误消息（仅在失败时）
   }
 }
 
@@ -151,9 +164,10 @@ export type IframeMessage
     | ReplaceSelectionMessage
     | SetThemeMessage
     | SetImageUploadConfigMessage
+    | CopyContentMessage
     | ContentResponseMessage
     | ContentChangedMessage
-    | RenderedHtmlResponseMessage
+    | CopyContentResponseMessage
     | ErrorMessage
     | ReadyMessage
     | BaseIframeMessage

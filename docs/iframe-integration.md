@@ -462,22 +462,108 @@ configureImageUpload()
 5. **配置验证**：上传图片前，编辑器会验证配置是否完整，不完整时会提示错误
 6. **默认图床**：如果不配置或配置为 `default`，将使用 GitHub 图床（需要配置 `githubConfig`）
 
-#### GET_RENDERED_HTML - 获取渲染后的 HTML
+#### COPY_CONTENT - 获取内容（支持多种格式）
+
+获取编辑器内容，支持五种格式，返回内容字符串供父窗口使用。与编辑器内置的复制功能格式保持一致。
 
 ```javascript
 const messageId = `msg_${Date.now()}`
 editorFrame.contentWindow.postMessage({
-  type: 'GET_RENDERED_HTML',
-  id: messageId
+  type: 'COPY_CONTENT',
+  id: messageId,
+  payload: {
+    format: 'txt' // 可选：'txt' | 'html' | 'html-without-style' | 'html-and-style' | 'md'
+  }
 }, '*')
 
 // 监听响应
 window.addEventListener('message', (event) => {
-  if (event.data.type === 'RENDERED_HTML_RESPONSE' && event.data.id === messageId) {
-    console.log('渲染后的 HTML:', event.data.payload.html)
+  if (event.data.type === 'COPY_CONTENT_RESPONSE' && event.data.id === messageId) {
+    if (event.data.payload.success) {
+      const content = event.data.payload.content
+      const format = event.data.payload.format
+      console.log(`获取成功 (${format}):`, content)
+
+      // 可以自行处理内容，例如复制到剪贴板
+      navigator.clipboard.writeText(content).then(() => {
+        console.log('内容已复制到剪贴板')
+      })
+    }
+    else {
+      console.error('获取失败:', event.data.payload.message)
+    }
   }
 })
 ```
+
+**参数说明：**
+
+- `format`: 内容格式，可选值：
+  - `'txt'`（默认）：公众号格式，处理后的 HTML，可直接粘贴到微信公众号后台
+  - `'html'`：HTML 源码格式，渲染后的 HTML
+  - `'html-without-style'`：无样式 HTML 格式，纯 HTML 结构
+  - `'html-and-style'`：兼容样式 HTML 格式，包含内联样式
+  - `'md'`：Markdown 源码格式，原始 Markdown 文本
+
+**响应数据：**
+
+- `success`: 是否成功
+- `content`: 内容字符串（成功时）
+- `format`: 内容格式（成功时）
+- `message`: 错误消息（失败时）
+
+**使用示例：**
+
+```javascript
+// 获取公众号格式内容
+function getWeChatContent() {
+  const messageId = `msg_${Date.now()}`
+  editorFrame.contentWindow.postMessage({
+    type: 'COPY_CONTENT',
+    id: messageId,
+    payload: { format: 'txt' }
+  }, '*')
+
+  window.addEventListener('message', function handler(event) {
+    if (event.data.type === 'COPY_CONTENT_RESPONSE' && event.data.id === messageId) {
+      window.removeEventListener('message', handler)
+      if (event.data.payload.success) {
+        const content = event.data.payload.content
+        // 自行处理内容
+        console.log('公众号格式内容:', content)
+      }
+    }
+  })
+}
+
+// 获取 Markdown 格式内容
+function getMarkdownContent() {
+  const messageId = `msg_${Date.now()}`
+  editorFrame.contentWindow.postMessage({
+    type: 'COPY_CONTENT',
+    id: messageId,
+    payload: { format: 'md' }
+  }, '*')
+
+  window.addEventListener('message', function handler(event) {
+    if (event.data.type === 'COPY_CONTENT_RESPONSE' && event.data.id === messageId) {
+      window.removeEventListener('message', handler)
+      if (event.data.payload.success) {
+        const mdContent = event.data.payload.content
+        // 自行处理内容
+        console.log('Markdown 内容:', mdContent)
+      }
+    }
+  })
+}
+```
+
+**注意事项：**
+
+- API 只返回内容字符串，不会自动复制到剪贴板
+- 父窗口可以根据需要自行处理内容（复制、保存、显示等）
+- 不同格式的内容已针对目标平台优化（如公众号格式已处理样式兼容性）
+- 如果获取失败，会通过 `COPY_CONTENT_RESPONSE` 消息返回错误信息
 
 #### READY - 检查编辑器是否准备就绪
 
@@ -525,14 +611,33 @@ window.addEventListener('message', (event) => {
 })
 ```
 
-#### RENDERED_HTML_RESPONSE - 渲染 HTML 响应
+#### COPY_CONTENT_RESPONSE - 获取内容响应
 
-响应 `GET_RENDERED_HTML` 请求。
+响应 `COPY_CONTENT` 请求。
 
 ```javascript
 window.addEventListener('message', (event) => {
-  if (event.data.type === 'RENDERED_HTML_RESPONSE') {
-    console.log('渲染后的 HTML:', event.data.payload.html)
+  if (event.data.type === 'COPY_CONTENT_RESPONSE') {
+    if (event.data.payload.success) {
+      const content = event.data.payload.content
+      const format = event.data.payload.format
+      console.log(`获取成功 (${format}):`, content)
+
+      // 可以自行处理内容
+      // 例如：复制到剪贴板
+      navigator.clipboard.writeText(content).then(() => {
+        console.log('内容已复制到剪贴板')
+      }).catch((err) => {
+        console.error('复制失败:', err)
+      })
+
+      // 或者：保存到文件
+      // downloadFile(content, 'content.html', 'text/html')
+    }
+    else {
+      console.error('获取失败:', event.data.payload.message)
+      alert(`获取失败: ${event.data.payload.message}`)
+    }
   }
 })
 ```
@@ -599,7 +704,9 @@ window.addEventListener('message', (event) => {
         <button onclick="clearContent()">清空内容</button>
         <button onclick="formatContent()">格式化</button>
         <button onclick="toggleTheme()">切换主题</button>
-        <button onclick="getRenderedHtml()">获取 HTML</button>
+        <button onclick="copyContent('txt')">复制（公众号）</button>
+        <button onclick="copyContent('html')">复制（HTML）</button>
+        <button onclick="copyContent('md')">复制（MD）</button>
       </div>
       <div id="editor-container">
         <iframe id="md-editor" src="http://localhost:5173/md/" allow="clipboard-read; clipboard-write"></iframe>
@@ -682,9 +789,30 @@ window.addEventListener('message', (event) => {
             alert('内容已复制到控制台')
             break
 
-          case 'RENDERED_HTML_RESPONSE':
-            console.log('🎨 渲染后的 HTML:', payload.html)
-            alert('HTML 已复制到控制台')
+          case 'COPY_CONTENT_RESPONSE':
+            if (payload.success) {
+              const content = payload.content
+              const format = payload.format
+              console.log(`✅ 获取成功 (${format}):`, content)
+              console.log('内容长度:', content.length, '字符')
+
+              // 可以自行处理内容，例如复制到剪贴板
+              if (navigator.clipboard) {
+                navigator.clipboard
+                  .writeText(content)
+                  .then(() => {
+                    alert(`内容已获取并复制到剪贴板 (${format})`)
+                  })
+                  .catch(() => {
+                    alert(`内容已获取 (${format})，请手动复制`)
+                  })
+              } else {
+                alert(`内容已获取 (${format})，请查看控制台`)
+              }
+            } else {
+              console.error('❌ 获取失败:', payload.message)
+              alert('获取失败: ' + payload.message)
+            }
             break
 
           case 'ERROR':
@@ -740,8 +868,11 @@ window.addEventListener('message', (event) => {
         })
       }
 
-      function getRenderedHtml() {
-        sendMessage('GET_RENDERED_HTML')
+      function copyContent(format = 'txt') {
+        const messageId = sendMessage('COPY_CONTENT', { format })
+        if (messageId) {
+          updateStatus('📋 正在获取内容...')
+        }
       }
 
       // 等待 iframe 加载完成

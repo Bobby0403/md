@@ -33,6 +33,18 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
       }
 
+      .toolbar-group {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding-right: 8px;
+        border-right: 1px solid #e0e0e0;
+      }
+
+      .toolbar-group:last-child {
+        border-right: none;
+      }
+
       .toolbar button {
         padding: 8px 16px;
         cursor: pointer;
@@ -41,15 +53,34 @@
         border-radius: 4px;
         font-size: 14px;
         transition: all 0.2s;
+        white-space: nowrap;
       }
 
-      .toolbar button:hover {
+      .toolbar button:hover:not(:disabled) {
         background: #f0f0f0;
         border-color: #b0b0b0;
       }
 
-      .toolbar button:active {
+      .toolbar button:active:not(:disabled) {
         transform: scale(0.98);
+      }
+
+      .toolbar button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .toolbar select {
+        padding: 8px 12px;
+        border: 1px solid #d0d0d0;
+        border-radius: 4px;
+        font-size: 14px;
+        background: #fff;
+        cursor: pointer;
+      }
+
+      .toolbar select:hover {
+        border-color: #b0b0b0;
       }
 
       .status {
@@ -59,11 +90,18 @@
         border-radius: 4px;
         font-size: 12px;
         color: #2e7d32;
+        min-width: 150px;
+        text-align: center;
       }
 
       .status.error {
         background: #ffebee;
         color: #c62828;
+      }
+
+      .status.loading {
+        background: #e3f2fd;
+        color: #1976d2;
       }
 
       #editor-container {
@@ -91,13 +129,29 @@
   <body>
     <div class="container">
       <div class="toolbar">
-        <button onclick="setContent()">设置内容</button>
-        <button onclick="getContent()">获取内容</button>
-        <button onclick="clearContent()">清空内容</button>
-        <button onclick="formatContent()">格式化</button>
-        <button onclick="toggleTheme()">切换主题</button>
-        <button onclick="getRenderedHtml()">获取 HTML</button>
-        <div id="status" class="status">等待编辑器加载...</div>
+        <div class="toolbar-group">
+          <button onclick="setContent()">设置内容</button>
+          <button onclick="getContent()">获取内容</button>
+          <button onclick="clearContent()">清空内容</button>
+          <button onclick="formatContent()">格式化</button>
+        </div>
+        <div class="toolbar-group">
+          <button onclick="toggleTheme()">切换主题</button>
+        </div>
+        <div class="toolbar-group">
+          <button onclick="copyContent()">复制内容</button>
+          <select id="copyFormat">
+            <option value="txt">公众号格式</option>
+            <option value="html">HTML 格式</option>
+            <option value="html-without-style">HTML（无样式）</option>
+            <option value="html-and-style">HTML（兼容样式）</option>
+            <option value="md">MD 格式</option>
+          </select>
+        </div>
+        <div class="toolbar-group">
+          <button onclick="configureImageUpload()">配置图床</button>
+        </div>
+        <div id="status" class="status loading">等待编辑器加载...</div>
       </div>
       <div id="editor-container">
         <div class="loading" id="loading">正在加载编辑器...</div>
@@ -139,6 +193,20 @@
         return 'msg_' + ++messageIdCounter + '_' + Date.now()
       }
 
+      // 更新按钮状态
+      function updateButtonsState(enabled) {
+        const buttons = document.querySelectorAll('.toolbar button')
+        buttons.forEach((btn) => {
+          if (btn.id !== 'status') {
+            btn.disabled = !enabled
+          }
+        })
+        const selects = document.querySelectorAll('.toolbar select')
+        selects.forEach((select) => {
+          select.disabled = !enabled
+        })
+      }
+
       // 发送消息到编辑器
       function sendMessage(type, payload = {}) {
         if (!editorReady) {
@@ -155,6 +223,9 @@
         return message.id
       }
 
+      // 初始化时禁用所有按钮
+      updateButtonsState(false)
+
       // 监听来自编辑器的消息
       window.addEventListener('message', (event) => {
         // 安全检查：验证消息来源（生产环境应验证具体域名）
@@ -170,7 +241,10 @@
             loadingEl.style.display = 'none'
             editorFrame.style.display = 'block'
             updateStatus('✅ 编辑器已准备就绪')
+            updateButtonsState(true) // 启用所有按钮
             console.log('✅ 编辑器已准备就绪')
+            // 初始化主题
+            initTheme()
             break
 
           case 'CONTENT_CHANGED':
@@ -179,15 +253,49 @@
             break
 
           case 'CONTENT_RESPONSE':
-            updateStatus('📄 已获取内容')
+            updateStatus('📄 已获取内容（' + payload.content.length + ' 字符）')
             console.log('📄 编辑器内容:', payload.content)
-            alert('内容已复制到控制台，长度: ' + payload.content.length + ' 字符')
+            // 可选：自动复制到剪贴板
+            if (navigator.clipboard) {
+              navigator.clipboard
+                .writeText(payload.content)
+                .then(() => {
+                  console.log('内容已自动复制到剪贴板')
+                })
+                .catch(() => {
+                  console.log('自动复制失败，请手动复制控制台内容')
+                })
+            }
             break
 
-          case 'RENDERED_HTML_RESPONSE':
-            updateStatus('🎨 已获取 HTML')
-            console.log('🎨 渲染后的 HTML:', payload.html)
-            alert('HTML 已复制到控制台，长度: ' + payload.html.length + ' 字符')
+          case 'COPY_CONTENT_RESPONSE':
+            if (payload.success) {
+              const content = payload.content
+              const format = payload.format
+              const length = content ? content.length : 0
+              updateStatus(`✅ 已获取内容 (${format}, ${length} 字符)`)
+              console.log(`✅ 获取成功 (${format}):`, content)
+              console.log('内容长度:', length, '字符')
+
+              // 可以自行处理内容，例如复制到剪贴板
+              if (navigator.clipboard && content) {
+                navigator.clipboard
+                  .writeText(content)
+                  .then(() => {
+                    console.log('内容已自动复制到剪贴板')
+                  })
+                  .catch((err) => {
+                    console.log('自动复制失败，请手动复制控制台内容:', err)
+                  })
+              }
+
+              // 可选：显示内容预览
+              // alert(`内容已获取 (${format})\n长度: ${length} 字符\n\n前100字符:\n${content.substring(0, 100)}...`)
+            } else {
+              updateStatus('❌ 获取失败: ' + payload.message, true)
+              console.error('❌ 获取失败:', payload.message)
+              alert('获取失败: ' + payload.message)
+            }
             break
 
           case 'ERROR':
@@ -199,7 +307,7 @@
 
       // 工具栏函数
       function setContent() {
-        const content = `# 新标题
+        const content = `# Markdown 编辑器 iframe 集成示例
 
 这是通过 API 设置的内容。
 
@@ -207,8 +315,11 @@
 
 - ✅ 支持完整的 Markdown 语法
 - ✅ 代码高亮
-- ✅ 数学公式
+- ✅ 数学公式（LaTeX）
 - ✅ Mermaid 图表
+- ✅ 图片上传（需配置图床）
+
+### 代码示例
 
 \`\`\`javascript
 function hello() {
@@ -216,9 +327,32 @@ function hello() {
 }
 \`\`\`
 
-> 这是一个引用块
+### 数学公式示例
+
+行内公式：$E = mc^2$
+
+块级公式：
+
+$$
+\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}
+$$
+
+### 引用块
+
+> 这是一个引用块示例
+> 可以包含多行内容
 
 **粗体文本** 和 *斜体文本*
+
+### 列表
+
+1. 有序列表项 1
+2. 有序列表项 2
+3. 有序列表项 3
+
+- 无序列表项 1
+- 无序列表项 2
+- 无序列表项 3
 `
         sendMessage('SET_CONTENT', { content })
         updateStatus('📝 正在设置内容...')
@@ -249,18 +383,97 @@ function hello() {
         updateStatus('🎨 正在切换主题: ' + (isDark ? '暗色' : '亮色'))
       }
 
-      function getRenderedHtml() {
-        sendMessage('GET_RENDERED_HTML')
-        updateStatus('🎨 正在获取渲染后的 HTML...')
+      // 根据系统主题自动切换
+      function initTheme() {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)')
+        isDark = prefersDark.matches
+        sendMessage('SET_THEME', {
+          theme: isDark ? 'dark' : 'light',
+        })
+
+        // 监听系统主题变化
+        prefersDark.addEventListener('change', (e) => {
+          isDark = e.matches
+          sendMessage('SET_THEME', {
+            theme: isDark ? 'dark' : 'light',
+          })
+        })
+      }
+
+      function copyContent() {
+        const format = document.getElementById('copyFormat').value
+        sendMessage('COPY_CONTENT', { format })
+        updateStatus('📋 正在复制内容...', false)
+      }
+
+      // 配置图片上传 OSS
+      function configureImageUpload() {
+        const imgHost = prompt('请输入图床类型（如: aliOSS, txCOS, qiniu, github）:', 'aliOSS')
+        if (!imgHost) return
+
+        let config = {}
+
+        if (imgHost === 'aliOSS') {
+          const accessKeyId = prompt('AccessKey ID:')
+          const accessKeySecret = prompt('AccessKey Secret:')
+          const bucket = prompt('Bucket 名称:')
+          const region = prompt('Region（如: oss-cn-shenzhen）:')
+          if (accessKeyId && accessKeySecret && bucket && region) {
+            const cdnHost = prompt('CDN 域名（可选，直接回车跳过）:')
+            const path = prompt('存储路径（可选，直接回车跳过）:')
+            config = {
+              accessKeyId,
+              accessKeySecret,
+              bucket,
+              region,
+              useSSL: true,
+              cdnHost: cdnHost || '',
+              path: path || 'images',
+            }
+          } else {
+            alert('配置不完整，已取消')
+            return
+          }
+        } else if (imgHost === 'github') {
+          const repo = prompt('GitHub 仓库（格式: username/repo）:')
+          const branch = prompt('分支名（可选，默认 main）:') || 'main'
+          const accessToken = prompt('GitHub Personal Access Token:')
+          if (repo && accessToken) {
+            config = {
+              repo,
+              branch,
+              accessToken,
+            }
+          } else {
+            alert('配置不完整，已取消')
+            return
+          }
+        } else {
+          alert('此示例仅演示阿里云 OSS 和 GitHub 配置，其他图床请参考文档')
+          return
+        }
+
+        sendMessage('SET_IMAGE_UPLOAD_CONFIG', {
+          imgHost,
+          config,
+        })
+        updateStatus('⚙️ 正在配置图片上传...')
+        console.log('配置图片上传:', { imgHost, config })
+
+        // 延迟显示成功消息
+        setTimeout(() => {
+          updateStatus('✅ 图片上传配置已设置')
+        }, 500)
       }
 
       // 等待 iframe 加载完成
       editorFrame.addEventListener('load', () => {
         console.log('iframe 已加载')
+        updateStatus('⏳ 正在初始化编辑器...', false)
         // 发送 READY 消息检查编辑器是否准备就绪
         setTimeout(() => {
           sendMessage('READY')
-        }, 1000)
+        }, 500)
       })
 
       // 处理 iframe 加载错误
